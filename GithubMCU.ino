@@ -9,10 +9,12 @@
 #include <Adafruit_Fingerprint.h>
 #include <time.h>
 #include "secrets.h"
+#include <lcd_i2c.h>
 #include "DHT.h"
 #include<SoftwareSerial.h> //Included SoftwareSerial Library
 //Started SoftwareSerial at RX and TX pin of ESP8266/NodeMCU
 SoftwareSerial s(3,1);
+
 #define TIME_ZONE 3
 
 WiFiClientSecure wifiClient;
@@ -20,6 +22,8 @@ BearSSL::X509List cert(cacert);
 BearSSL::X509List client_crt(client_cert);
 BearSSL::PrivateKey key(privkey);
 PubSubClient client(wifiClient);
+
+lcd_i2c lcd(0x3E,16,2); //The I2C communication for this LCD is 0x3E (HEX) or 62 (DEC), 16 is the number of the columns, 2 is the number of the rows
 
 time_t now;
 time_t nowish = 1510592825;
@@ -59,7 +63,7 @@ Adafruit_Fingerprint finger = Adafruit_Fingerprint(&mySerial);
 String currentTelegramHandle = "";
 
 Servo servo1;                          // create servo object to control a servo
-                            // variable to store the servo position
+int posn = 0;                            // variable to store the servo position
 
 UniversalTelegramBot bot(BOTtoken, wifiClient);
 
@@ -127,8 +131,10 @@ bool verifyFingerprintdoor(String telegramHandle, uint8_t expectedFingerprintID)
 void setup() {
   Serial.begin(115200);
 
-  //Serial communications Begin at 9600 Baud 
+  //Serial Begin at 9600 Baud 
   s.begin(9600);
+  Serial.begin(9600);
+
 
   // Configure time and set trust anchors for telegram
   configTime(0, 0, "pool.ntp.org");
@@ -180,17 +186,21 @@ void setup() {
   }
 
   finger.begin(57600);
-  for (int i =0; i > 10; i++) {
+  while(1) {
     if (finger.verifyPassword()) {
       Serial.println("Found fingerprint sensor!");
       break;
     } else {
       Serial.println("Did not find fingerprint sensor :(");
       delay(1000);
-      break;
     }
   }
   connectAWS();
+  lcd.begin(); //LCD initialization function  
+  lcd.setCursor(0, 0); //cursor setting function start with column followed by row
+  lcd.print("LockGitech"); //Print text
+  lcd.setCursor(0, 1); //cursor setting function start with column followed by row
+  lcd.print("Login for access"); //Print text
 }
 
 void loop() {
@@ -484,6 +494,9 @@ void fingerprintDoor(String telegramHandle) {
     bot.sendMessage(telegramHandle, "You haven't enrolled a fingerprint. Use /enroll to enroll one.", "");
     return;
   }
+  lcd.clear();
+  lcd.setCursor(0, 0); //setting the cursor in the desired position.
+  lcd.print("Place Finger"); 
 
   // Retrieve expected fingerprint ID
   uint8_t expectedFingerprintID = registeredUsers[userIndex].fingerprintID;
@@ -493,11 +506,18 @@ void fingerprintDoor(String telegramHandle) {
     // Fingerprint matched, user is logged in
     //code to open 
     bot.sendMessage(telegramHandle, "Door opening", "");
+    lcd.clear();
+    lcd.setCursor(0, 0); //setting the cursor in the desired position.
+    lcd.print("Opening Door"); 
     for (posn = 0; posn < 180; posn += 1)// goes from 0 degrees to 180 degrees
     {// in steps of 1 degree
     servo1.write (posn);// tell servo to go to position in variable 'pos'
     delay (10);// waits 10ms for the servo to reach the position
     }
+    delay (5000);
+    lcd.clear();
+    lcd.setCursor(0, 0); //setting the cursor in the desired position.
+    lcd.print("Closing Door"); 
     bot.sendMessage(telegramHandle, "Door closing", "");
     delay (5000);
   for (posn = 180; posn>=1; posn-=1)// goes from 180 degrees to 0 degrees                                                                                 // in steps of 1 degree
@@ -505,6 +525,9 @@ void fingerprintDoor(String telegramHandle) {
     servo1.write (posn);// tell servo to go to position in variable 'pos'
     delay (10);// waits 10ms for the servo to reach the position  }
     } 
+    lcd.clear();
+    lcd.setCursor(0, 0); //setting the cursor in the desired position.
+    lcd.print("Lockgitech"); 
   }
   else {
     // Fingerprint did not match
@@ -673,11 +696,11 @@ void sendForgotPassword(String telegramHandle) {
 
 // Function to generate and send OTP to the user's email address (simulated)
 void generateAndSendOTP(String telegramHandle) {
-  Generate a random 6-digit OTP
+  //Generate a random 6-digit OTP
   otp = random(100000, 999999);
-
-  //send otp via serial comms to arduino
   S.write(otp);
+  // Simulate sending OTP to user's email
+  Serial.println("OTP generated: " + String(otp));
   bot.sendMessage(telegramHandle, "Your otp is " + String(otp), "");
 }
 
@@ -883,13 +906,13 @@ bool enrollFingerprintInternal(uint8_t fingerprintID, String telegramHandle) {
         break;
       case FINGERPRINT_PACKETRECIEVEERR:
         Serial.println("Communication error");
-        break;
+        return false;
       case FINGERPRINT_IMAGEFAIL:
         Serial.println("Imaging error");
-        break;
+        return false;
       default:
         Serial.println("Unknown error");
-        break;
+        return false;
     }
   }
 
@@ -942,13 +965,13 @@ bool enrollFingerprintInternal(uint8_t fingerprintID, String telegramHandle) {
         break;
       case FINGERPRINT_PACKETRECIEVEERR:
         Serial.println("Communication error");
-        break;
+        return false;
       case FINGERPRINT_IMAGEFAIL:
         Serial.println("Imaging error");
-        break;
+        return false;
       default:
         Serial.println("Unknown error");
-        break;
+        return false;
     }
   }
 
@@ -1095,6 +1118,8 @@ void messageReceived(char *topic, byte *payload, unsigned int length)
   }
   Serial.println();
 }
+
+
 
 void connectWifiTele(){
   wifiClient.setTrustAnchors(&teleCert);
